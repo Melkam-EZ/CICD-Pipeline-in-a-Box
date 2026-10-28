@@ -39,7 +39,7 @@ if [ -n "$($DC ps -q 2>/dev/null)" ]; then
 else
   for p in 3000 5000 8081 8082; do check "Port $p is free" port_free "$p"; done
 fi
-check "Outbound internet (Docker Hub)" curl -fsS -m 10 -o /dev/null https://registry-1.docker.io/v2/
+check "Outbound internet (Docker Hub)" curl -sS -m 10 -o /dev/null https://registry-1.docker.io/v2/
 
 log "Pulling images (up to 3 tries each)"
 for img in "$GITEA_IMAGE" "$REGISTRY_IMAGE" "$RUNNER_BASE_IMAGE" "$DOCKER_CLI_IMAGE" "$PYTHON_IMAGE"; do
