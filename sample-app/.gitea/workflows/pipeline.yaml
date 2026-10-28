@@ -1,0 +1,65 @@
+name: CI-CD
+
+# Runs on every push to main. "runs-on: host" is the runner label registered by
+# the stack: steps run inside the runner container, which talks to the EC2
+# instance's Docker daemon through the mounted Docker socket.
+on:
+  push:
+    branches: [main]
+
+env:
+  BUILDKIT_PROGRESS: plain
+  REGISTRY: localhost:5000
+  IMAGE_NAME: hello-app
+
+jobs:
+  pipeline:
+    runs-on: host
+    steps:
+      - name: 1. Checkout
+        run: |
+          set -euo pipefail
+          SERVER="${GITHUB_SERVER_URL:-http://localhost:3000}"
+          rm -rf src
+          git clone --quiet "${SERVER%/}/${GITHUB_REPOSITORY}.git" src
+          git -C src checkout --quiet "${GITHUB_SHA}"
+          echo "Checked out ${GITHUB_SHA}"
+
+      - name: 2. Unit tests (run inside Docker)
+        working-directory: src
+        run: docker build --target test -t hello-app:test .
+
+      - name: 3. Build image
+        working-directory: src
+        run: |
+          set -euo pipefail
+          SHORT="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          docker build --target runtime --build-arg GIT_SHA="${SHORT}" \
+            -t "${REGISTRY}/${IMAGE_NAME}:${SHORT}" \
+            -t "${REGISTRY}/${IMAGE_NAME}:latest" .
+
+      - name: 4. Push to local registry
+        run: |
+          set -euo pipefail
+          SHORT="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          docker push "${REGISTRY}/${IMAGE_NAME}:${SHORT}"
+          docker push "${REGISTRY}/${IMAGE_NAME}:latest"
+
+      - name: 5. Deploy (health-gated, auto-rollback)
+        run: |
+          set -euo pipefail
+          SHORT="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          bash src/deploy/deploy.sh "${REGISTRY}/${IMAGE_NAME}:${SHORT}"
+
+      - name: 6. Verify live version
+        run: |
+          set -euo pipefail
+          SHORT="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          OUT="$(curl -fsS http://127.0.0.1:8081/)"
+          echo "${OUT}"
+          echo "${OUT}" | grep -q "${SHORT}"
+          echo "Live app is running commit ${SHORT}"
+
+      - name: 7. Tidy up
+        if: always()
+        run: docker image prune -f >/dev/null 2>&1 || true

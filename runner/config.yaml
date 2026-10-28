@@ -1,0 +1,16 @@
+# Minimal act_runner config. Anything not listed uses the runner's defaults.
+log:
+  level: info
+
+runner:
+  file: /data/.runner
+  capacity: 1
+  timeout: 15m
+  fetch_timeout: 5s
+  fetch_interval: 2s
+
+cache:
+  enabled: false
+
+host:
+  workdir_parent: /data/workdir

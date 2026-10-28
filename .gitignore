@@ -1,0 +1,13 @@
+# Secrets and generated state
+.env
+.demo/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Misc
+*.pem
+*.tar.gz
+.DS_Store

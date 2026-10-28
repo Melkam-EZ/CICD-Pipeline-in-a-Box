@@ -1,0 +1,5 @@
+.git
+.gitea
+__pycache__
+*.pyc
+deploy

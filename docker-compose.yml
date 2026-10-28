@@ -1,0 +1,78 @@
+name: cicd-box
+
+services:
+  # Git server + CI/CD engine (Gitea Actions). Web UI on 127.0.0.1:3000 only.
+  gitea:
+    image: ${GITEA_IMAGE:-gitea/gitea:1.22.6}
+    container_name: cicd-gitea
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__server__DOMAIN: localhost
+      GITEA__server__ROOT_URL: http://localhost:3000/
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__DISABLE_SSH: "true"
+      GITEA__server__OFFLINE_MODE: "true"
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__security__SECRET_KEY: ${GITEA_SECRET_KEY:-}
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__picture__DISABLE_GRAVATAR: "true"
+      GITEA__actions__ENABLED: "true"
+      GITEA__repository__DEFAULT_REPO_UNITS: repo.code,repo.issues,repo.pulls,repo.actions
+      GITEA__log__LEVEL: Warn
+    volumes:
+      - gitea-data:/data
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # Local Docker registry (stands in for ECR / Docker Hub). 127.0.0.1:5000 only.
+  registry:
+    image: ${REGISTRY_IMAGE:-registry:2}
+    container_name: cicd-registry
+    restart: unless-stopped
+    mem_limit: 256m
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - registry-data:/var/lib/registry
+
+  # CI runner. Host network so it reaches Gitea/registry on localhost and the
+  # Docker socket so its jobs build and run containers on this EC2 instance.
+  runner:
+    build:
+      context: ./runner
+      args:
+        RUNNER_BASE: ${RUNNER_BASE_IMAGE:-gitea/act_runner:0.2.11}
+        DOCKER_CLI_IMAGE: ${DOCKER_CLI_IMAGE:-docker:27-cli}
+    image: cicd-box-runner:local
+    container_name: cicd-runner
+    restart: unless-stopped
+    mem_limit: 512m
+    network_mode: host
+    depends_on:
+      gitea:
+        condition: service_healthy
+    environment:
+      CONFIG_FILE: /config.yaml
+      GITEA_INSTANCE_URL: http://localhost:3000
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${RUNNER_TOKEN:-}
+      GITEA_RUNNER_NAME: box-runner
+      GITEA_RUNNER_LABELS: host:host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - runner-data:/data
+      - ./runner/config.yaml:/config.yaml:ro
+
+volumes:
+  gitea-data:
+  registry-data:
+  runner-data:
